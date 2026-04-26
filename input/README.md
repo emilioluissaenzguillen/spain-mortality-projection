@@ -38,5 +38,5 @@ Input filenames keep their original downloaded names where possible.
 
 The active repo workflow currently centers on the INE replication stage.
 The `2100` extension inputs are kept separate on purpose so the two stages do not get mixed.
-Older thesis-only and pension-specific inputs were removed from the active repo structure because they are already preserved in `old/`.
+Older exploratory and unrelated working files were removed from the active repo structure because they are already preserved in `old/`.
 Very large raw source downloads can be kept locally and reduced to smaller tracked extracts for the active repo.

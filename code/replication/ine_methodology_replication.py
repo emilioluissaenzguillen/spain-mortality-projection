@@ -1,3 +1,10 @@
+"""Replicate INE's 2024-2073 projected mortality tables for Spain.
+
+The script follows the public INE methodology as closely as possible:
+fit a life-expectancy path, derive the horizon-year profile from model
+life tables, and interpolate annual qx/ax profiles up to 2073.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -81,6 +88,23 @@ class SummaryRow:
     compared_cells: int
     mean_abs_error: float
     max_abs_error: float
+
+
+@dataclass
+class ReplicationResult:
+    parameters: pd.DataFrame
+    e0_projection: pd.DataFrame
+    observed_qx_wide: pd.DataFrame
+    observed_ax_wide: pd.DataFrame
+    smoothed_qx: pd.DataFrame
+    smoothed_ax: pd.DataFrame
+    start_qx: pd.DataFrame
+    start_ax: pd.DataFrame
+    qx_horizon: pd.DataFrame
+    ax_horizon: pd.DataFrame
+    qx_projected: pd.DataFrame
+    ax_projected: pd.DataFrame
+    life_projection: pd.DataFrame
 
 
 def require_file(path: Path) -> None:
@@ -212,6 +236,8 @@ def build_current_start_profile(
         v2022 = observed[(sex, age, 2022)]
         v2023 = observed[(sex, age, 2023)]
 
+        # This keeps the starting profile close to the recent pattern while
+        # reducing the direct influence of the pandemic years.
         prime_2023 = (v2019 + v2022 + 3 * v2023) / 5
         prime_2022 = (v2018 + v2019 + v2022 + 2 * v2023) / 5
         prime_2019 = (v2017 + v2018 + v2019 + v2022 + v2023) / 5
@@ -223,10 +249,6 @@ def build_current_start_profile(
             }
         )
     return pd.DataFrame(rows)
-
-
-def parse_number(text: str) -> float:
-    return float(text.replace(".", "").replace(",", "."))
 
 
 def load_population_male_july_2023() -> dict[int, float]:
@@ -384,6 +406,8 @@ def fit_logit_projection(
     horizon_target_e0: float,
     gap_distribution_years: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # INE's long-run structure is represented here with a bounded logit path
+    # for life expectancy at birth.
     e0_min, e0_max, alpha, beta = estimate_asymptotes(
         sex,
         observed_e0,
@@ -399,6 +423,8 @@ def fit_logit_projection(
     e0_hat_last = float(e0_hat[np.where(projection_years == LAST_OBSERVED_YEAR)][0])
     e0_gap_last = e0_observed_last - e0_hat_last
 
+    # The fitted path is aligned to the last observed year by fading out the
+    # gap progressively instead of forcing a one-year jump.
     gap_factor: list[float] = []
     for year in projection_years:
         if year == LAST_OBSERVED_YEAR:
@@ -457,43 +483,21 @@ def fit_logit_projection(
     return e0_projection, parameters
 
 
-def parse_model_qx_profiles(sex: str, family: str, lower_e0: int, upper_e0: int) -> dict[int, dict[int, float]]:
-    wb = load_workbook(MODEL_TABLE_FILE, read_only=True, data_only=True)
-    ws = wb["Sheet1"]
-    header = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
-    idx = {name: pos for pos, name in enumerate(header)}
-
-    profiles: dict[int, dict[int, float]] = {lower_e0: {}, upper_e0: {}}
-    sex_label = sex.title()
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if row[idx["Type_MLT"]] != "CD":
-            continue
-        if row[idx["Family"]] != family:
-            continue
-        if row[idx["Sex"]] != sex_label:
-            continue
-        e0 = int(row[idx["E0"]])
-        if e0 not in profiles:
-            continue
-        age = int(row[idx["age"]])
-        profiles[e0][age] = float(row[idx["qx1"]])
-
-    return profiles
-
-
-def parse_model_ax_profiles(
+def parse_model_profiles(
     sex: str,
     family: str,
     lower_e0: int,
     upper_e0: int,
-) -> dict[int, dict[int, float]]:
+) -> tuple[dict[int, dict[int, float]], dict[int, dict[int, float]]]:
     wb = load_workbook(MODEL_TABLE_FILE, read_only=True, data_only=True)
     ws = wb["Sheet1"]
     header = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
     idx = {name: pos for pos, name in enumerate(header)}
 
-    rows: dict[int, dict[int, dict[str, float]]] = {lower_e0: {}, upper_e0: {}}
+    qx_profiles: dict[int, dict[int, float]] = {lower_e0: {}, upper_e0: {}}
+    ax_rows: dict[int, dict[int, dict[str, float]]] = {lower_e0: {}, upper_e0: {}}
     sex_label = sex.title()
+
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[idx["Type_MLT"]] != "CD":
             continue
@@ -502,19 +506,19 @@ def parse_model_ax_profiles(
         if row[idx["Sex"]] != sex_label:
             continue
         e0 = int(row[idx["E0"]])
-        if e0 not in rows:
+        if e0 not in qx_profiles:
             continue
-
         age = int(row[idx["age"]])
-        rows[e0][age] = {
+        qx_profiles[e0][age] = float(row[idx["qx1"]])
+        ax_rows[e0][age] = {
             "lx": float(row[idx["lx1"]]),
             "dx": float(row[idx["dx1"]]),
             "Lx": float(row[idx["Lx1"]]),
             "Tx": float(row[idx["Tx1"]]),
         }
 
-    profiles: dict[int, dict[int, float]] = {}
-    for e0, by_age in rows.items():
+    ax_profiles: dict[int, dict[int, float]] = {}
+    for e0, by_age in ax_rows.items():
         profile: dict[int, float] = {}
         for age in range(0, 100):
             dx = by_age[age]["dx"]
@@ -523,9 +527,9 @@ def parse_model_ax_profiles(
             else:
                 profile[age] = (by_age[age]["Lx"] - by_age[age + 1]["lx"]) / dx
         profile[100] = by_age[100]["Tx"] / by_age[100]["lx"]
-        profiles[e0] = profile
+        ax_profiles[e0] = profile
 
-    return profiles
+    return qx_profiles, ax_profiles
 
 
 def interpolate_profiles(
@@ -572,9 +576,8 @@ def build_yearly_profiles(
     for year in range(START_YEAR, END_YEAR + 1):
         df[f"Year_{year}"] = [projected[year][age] for age in ages]
     return df
-
-
 def life_expectancy_at_birth(qx_by_age: dict[int, float], ax_by_age: dict[int, float]) -> float:
+    # INE closes the life table at age 100+ with q100+ = 1.
     lx = 100000.0
     total_Lx = 0.0
     for age in range(0, 101):
@@ -696,12 +699,103 @@ def save_dataframe(df: pd.DataFrame, path: Path) -> None:
     df.to_excel(path, index=False)
 
 
+def year_column(year: int) -> str:
+    return f"Year_{year}"
+
+
+def build_horizon_dataframe(profile: dict[int, float], value_name: str) -> pd.DataFrame:
+    ages = sorted(profile)
+    return pd.DataFrame({"Age": ages, value_name: [profile[age] for age in ages]})
+
+
+def coefficient_series_from_projection(e0_projection: pd.DataFrame) -> dict[int, float]:
+    return {
+        int(row["Year"]): float(row["coef_t"])
+        for _, row in e0_projection.iterrows()
+        if START_YEAR <= row["Year"] <= END_YEAR - 1
+    }
+
+
+def smoothed_start_by_age(start_profile: pd.DataFrame) -> dict[int, float]:
+    return {
+        int(row.Age): float(row.smoothed_start)
+        for row in start_profile.itertuples(index=False)
+    }
+
+
+def profile_by_age(df: pd.DataFrame, value_name: str) -> dict[int, float]:
+    return {
+        int(row.Age): float(getattr(row, value_name))
+        for row in df.itertuples(index=False)
+    }
+
+
+def build_life_projection(qx_projected: pd.DataFrame, ax_projected: pd.DataFrame) -> pd.DataFrame:
+    life_rows: list[dict[str, float | int]] = []
+    for year in range(START_YEAR, END_YEAR + 1):
+        qx_by_age = {
+            int(row.Age): float(getattr(row, year_column(year)))
+            for row in qx_projected.itertuples(index=False)
+        }
+        ax_by_age = {
+            int(row.Age): float(getattr(row, year_column(year)))
+            for row in ax_projected.itertuples(index=False)
+        }
+        life_rows.append(
+            {
+                "Year": year,
+                "e0_life_table": life_expectancy_at_birth(qx_by_age, ax_by_age),
+            }
+        )
+    return pd.DataFrame(life_rows)
+
+
+def projected_qx_lookup(qx_projected: pd.DataFrame) -> dict[tuple[int, int], float]:
+    lookup: dict[tuple[int, int], float] = {}
+    for row in qx_projected.itertuples(index=False):
+        age = int(row.Age)
+        for year in range(START_YEAR, END_YEAR + 1):
+            lookup[(age, year)] = float(getattr(row, year_column(year))) * 1000.0
+    return lookup
+
+
+def projected_e0_lookup(
+    e0_projection: pd.DataFrame,
+    life_projection: pd.DataFrame,
+) -> tuple[dict[int, float], dict[int, float]]:
+    generated_e0_adjusted = {
+        int(row.Year): float(row.e0_adjusted)
+        for row in e0_projection.itertuples(index=False)
+        if START_YEAR <= row.Year <= END_YEAR
+    }
+    generated_e0_life = {
+        int(row.Year): float(row.e0_life_table)
+        for row in life_projection.itertuples(index=False)
+    }
+    return generated_e0_adjusted, generated_e0_life
+
+
+def append_summary(summary_ws, variant_name: str, summary: SummaryRow) -> None:
+    summary_ws.append(
+        [
+            variant_name,
+            summary.sex,
+            summary.metric,
+            summary.compared_cells,
+            summary.mean_abs_error,
+            summary.max_abs_error,
+        ]
+    )
+
+
 def run_for_sex(
     config: SexConfig,
     observed_qx: dict[tuple[str, int, int], float],
     observed_ax: dict[tuple[str, int, int], float],
     observed_e0: dict[tuple[str, int], float],
-) -> dict[str, pd.DataFrame | dict]:
+) -> ReplicationResult:
+    # INE first projects life expectancy at birth and then uses that path
+    # to interpolate age-specific qx and ax profiles year by year.
     e0_projection, parameters = fit_logit_projection(
         config.sex,
         observed_e0,
@@ -721,133 +815,118 @@ def run_for_sex(
     upper_e0 = lower_e0 + 1
     coef_horizon = (e0_horizon - lower_e0) / (upper_e0 - lower_e0)
 
-    qx_profiles = parse_model_qx_profiles(config.sex, config.model_family, lower_e0, upper_e0)
-    ax_profiles = parse_model_ax_profiles(config.sex, config.model_family, lower_e0, upper_e0)
+    # The horizon-year age profile comes from interpolation between adjacent
+    # Coale-Demeny model life tables, as described by INE.
+    qx_profiles, ax_profiles = parse_model_profiles(
+        config.sex,
+        config.model_family,
+        lower_e0,
+        upper_e0,
+    )
 
     qx_horizon = interpolate_profiles(qx_profiles[lower_e0], qx_profiles[upper_e0], coef_horizon)
     qx_horizon[100] = 1.0
     ax_horizon = interpolate_profiles(ax_profiles[lower_e0], ax_profiles[upper_e0], coef_horizon)
 
-    coef_series = {int(row["Year"]): row["coef_t"] for _, row in e0_projection.iterrows() if START_YEAR <= row["Year"] <= END_YEAR}
+    coef_series = coefficient_series_from_projection(e0_projection)
 
     qx_projected = build_yearly_profiles(
-        {int(row.Age): float(row.smoothed_start) for row in start_qx.itertuples(index=False)},
+        smoothed_start_by_age(start_qx),
         qx_horizon,
         coef_series,
         force_terminal_qx=True,
     )
     ax_projected = build_yearly_profiles(
-        {int(row.Age): float(row.smoothed_start) for row in start_ax.itertuples(index=False)},
+        smoothed_start_by_age(start_ax),
         ax_horizon,
         coef_series,
         force_terminal_qx=False,
     )
+    life_projection = build_life_projection(qx_projected, ax_projected)
 
-    life_rows: list[dict[str, float | int]] = []
-    for year in range(START_YEAR, END_YEAR + 1):
-        qx_by_age = {int(row.Age): float(getattr(row, f"Year_{year}")) for row in qx_projected.itertuples(index=False)}
-        ax_by_age = {int(row.Age): float(getattr(row, f"Year_{year}")) for row in ax_projected.itertuples(index=False)}
-        e0_from_life_table = life_expectancy_at_birth(qx_by_age, ax_by_age)
-        life_rows.append({"Year": year, "e0_life_table": e0_from_life_table})
-    life_projection = pd.DataFrame(life_rows)
-
-    qx_horizon_df = pd.DataFrame({"Age": sorted(qx_horizon), "qx_proj2073": [qx_horizon[age] for age in sorted(qx_horizon)]})
-    ax_horizon_df = pd.DataFrame({"Age": sorted(ax_horizon), "ax_proj2073": [ax_horizon[age] for age in sorted(ax_horizon)]})
-
-    return {
-        "parameters": parameters,
-        "e0_projection": e0_projection,
-        "observed_qx_wide": observed_qx_wide,
-        "observed_ax_wide": observed_ax_wide,
-        "smoothed_qx": smoothed_qx,
-        "smoothed_ax": smoothed_ax,
-        "start_qx": start_qx,
-        "start_ax": start_ax,
-        "qx_horizon": qx_horizon_df,
-        "ax_horizon": ax_horizon_df,
-        "qx_projected": qx_projected,
-        "ax_projected": ax_projected,
-        "life_projection": life_projection,
-    }
+    return ReplicationResult(
+        parameters=parameters,
+        e0_projection=e0_projection,
+        observed_qx_wide=observed_qx_wide,
+        observed_ax_wide=observed_ax_wide,
+        smoothed_qx=smoothed_qx,
+        smoothed_ax=smoothed_ax,
+        start_qx=start_qx,
+        start_ax=start_ax,
+        qx_horizon=build_horizon_dataframe(qx_horizon, "qx_proj2073"),
+        ax_horizon=build_horizon_dataframe(ax_horizon, "ax_proj2073"),
+        qx_projected=qx_projected,
+        ax_projected=ax_projected,
+        life_projection=life_projection,
+    )
 
 
 def rebuild_result_with_start_profiles(
-    result: dict[str, pd.DataFrame | dict],
+    result: ReplicationResult,
     start_qx: pd.DataFrame,
     start_ax: pd.DataFrame,
-) -> dict[str, pd.DataFrame | dict]:
-    coef_series = {
-        int(row["Year"]): row["coef_t"]
-        for _, row in result["e0_projection"].iterrows()
-        if START_YEAR <= row["Year"] <= END_YEAR
-    }
-    qx_horizon = {
-        int(row.Age): float(row.qx_proj2073)
-        for row in result["qx_horizon"].itertuples(index=False)
-    }
-    ax_horizon = {
-        int(row.Age): float(row.ax_proj2073)
-        for row in result["ax_horizon"].itertuples(index=False)
-    }
+) -> ReplicationResult:
+    coef_series = coefficient_series_from_projection(result.e0_projection)
+    qx_horizon = profile_by_age(result.qx_horizon, "qx_proj2073")
+    ax_horizon = profile_by_age(result.ax_horizon, "ax_proj2073")
 
     qx_projected = build_yearly_profiles(
-        {int(row.Age): float(row.smoothed_start) for row in start_qx.itertuples(index=False)},
+        smoothed_start_by_age(start_qx),
         qx_horizon,
         coef_series,
         force_terminal_qx=True,
     )
     ax_projected = build_yearly_profiles(
-        {int(row.Age): float(row.smoothed_start) for row in start_ax.itertuples(index=False)},
+        smoothed_start_by_age(start_ax),
         ax_horizon,
         coef_series,
         force_terminal_qx=False,
     )
-
-    life_rows: list[dict[str, float | int]] = []
-    for year in range(START_YEAR, END_YEAR + 1):
-        qx_by_age = {int(row.Age): float(getattr(row, f"Year_{year}")) for row in qx_projected.itertuples(index=False)}
-        ax_by_age = {int(row.Age): float(getattr(row, f"Year_{year}")) for row in ax_projected.itertuples(index=False)}
-        e0_from_life_table = life_expectancy_at_birth(qx_by_age, ax_by_age)
-        life_rows.append({"Year": year, "e0_life_table": e0_from_life_table})
-    life_projection = pd.DataFrame(life_rows)
-
-    rebuilt = dict(result)
-    rebuilt["start_qx"] = start_qx
-    rebuilt["start_ax"] = start_ax
-    rebuilt["qx_projected"] = qx_projected
-    rebuilt["ax_projected"] = ax_projected
-    rebuilt["life_projection"] = life_projection
-    return rebuilt
+    return ReplicationResult(
+        parameters=result.parameters,
+        e0_projection=result.e0_projection,
+        observed_qx_wide=result.observed_qx_wide,
+        observed_ax_wide=result.observed_ax_wide,
+        smoothed_qx=result.smoothed_qx,
+        smoothed_ax=result.smoothed_ax,
+        start_qx=start_qx,
+        start_ax=start_ax,
+        qx_horizon=result.qx_horizon,
+        ax_horizon=result.ax_horizon,
+        qx_projected=qx_projected,
+        ax_projected=ax_projected,
+        life_projection=build_life_projection(qx_projected, ax_projected),
+    )
 
 
 def build_all_results(
     observed_qx: dict[tuple[str, int, int], float],
     observed_ax: dict[tuple[str, int, int], float],
     observed_e0: dict[tuple[str, int], float],
-) -> dict[str, dict[str, dict[str, pd.DataFrame | dict]]]:
+) -> dict[str, dict[str, ReplicationResult]]:
     baseline_results = {
         config.sex: run_for_sex(config, observed_qx, observed_ax, observed_e0)
         for config in CONFIGS
     }
-    results: dict[str, dict[str, dict[str, pd.DataFrame | dict]]] = {
-        VARIANT_BASELINE: baseline_results
-    }
+    results: dict[str, dict[str, ReplicationResult]] = {VARIANT_BASELINE: baseline_results}
 
     if POPULATION_EXTRACT_CSV.exists() and DEATHS_EXTRACT_CSV.exists():
+        # This optional variant only tweaks the male ages where the remaining
+        # discrepancy is concentrated. It is kept separate from the baseline.
         population = load_population_male_july_2023()
         deaths = load_deaths_male_2023()
         estimated_2023 = estimated_qx_2023_male(population, deaths, observed_qx)
         adjusted_high_age_start = smoothed_estimated_high_ages(estimated_2023, observed_qx, range(95, 100))
 
         male_baseline = baseline_results["male"]
-        adjusted_start_qx = male_baseline["start_qx"].copy()
+        adjusted_start_qx = male_baseline.start_qx.copy()
         for age, value in adjusted_high_age_start.items():
             adjusted_start_qx.loc[adjusted_start_qx["Age"] == age, "smoothed_start"] = value
 
         adjusted_male = rebuild_result_with_start_profiles(
             male_baseline,
             adjusted_start_qx,
-            male_baseline["start_ax"].copy(),
+            male_baseline.start_ax.copy(),
         )
 
         results[VARIANT_MALE_HIGH_AGE_ADJUSTED] = {
@@ -859,7 +938,7 @@ def build_all_results(
 
 
 def build_validation(
-    results: dict[str, dict[str, dict[str, pd.DataFrame | dict]]],
+    results: dict[str, dict[str, ReplicationResult]],
     benchmark_qx: dict[str, dict[tuple[int, int], float]],
     benchmark_e0: dict[str, dict[int, float]],
     observed_qx: dict[tuple[str, int, int], float],
@@ -874,27 +953,17 @@ def build_validation(
         variant_prefix = VARIANT_SHEET_PREFIX.get(variant_name, variant_name[:4])
         for config in CONFIGS:
             result = variant_results[config.sex]
-            qx_df = result["qx_projected"]
-            life_df = result["life_projection"]
-            e0_projection = result["e0_projection"]
-
-            generated_qx = {}
-            for row in qx_df.itertuples(index=False):
-                age = int(row.Age)
-                for year in range(START_YEAR, END_YEAR + 1):
-                    generated_qx[(age, year)] = float(getattr(row, f"Year_{year}")) * 1000.0
-            generated_e0_adjusted = {
-                int(row.Year): float(row.e0_adjusted)
-                for row in e0_projection.itertuples(index=False)
-                if START_YEAR <= row.Year <= END_YEAR
-            }
-            generated_e0_life = {int(row.Year): float(row.e0_life_table) for row in life_df.itertuples(index=False)}
+            generated_qx = projected_qx_lookup(result.qx_projected)
+            generated_e0_adjusted, generated_e0_life = projected_e0_lookup(
+                result.e0_projection,
+                result.life_projection,
+            )
 
             qx_rows, qx_summary = compare_dicts(generated_qx, benchmark_qx[config.sex])
             qx_summary.sex = config.sex
             qx_summary.metric = "qx_official_per_thousand_all_years"
             summary_lookup[(variant_name, config.sex, qx_summary.metric)] = qx_summary
-            summary_ws.append([variant_name, qx_summary.sex, qx_summary.metric, qx_summary.compared_cells, qx_summary.mean_abs_error, qx_summary.max_abs_error])
+            append_summary(summary_ws, variant_name, qx_summary)
 
             for specific_year in [START_YEAR, 2030, 2050, END_YEAR]:
                 _, year_summary = compare_dicts(
@@ -904,16 +973,7 @@ def build_validation(
                 year_summary.sex = config.sex
                 year_summary.metric = f"qx_official_per_thousand_{specific_year}"
                 summary_lookup[(variant_name, config.sex, year_summary.metric)] = year_summary
-                summary_ws.append(
-                    [
-                        variant_name,
-                        year_summary.sex,
-                        year_summary.metric,
-                        year_summary.compared_cells,
-                        year_summary.mean_abs_error,
-                        year_summary.max_abs_error,
-                    ]
-                )
+                append_summary(summary_ws, variant_name, year_summary)
 
             qx_ws = output_wb.create_sheet(f"{variant_prefix}_{config.sex}_qx")
             write_sheet(qx_ws, ["age", "year", "generated", "benchmark", "abs_error"], qx_rows)
@@ -922,14 +982,14 @@ def build_validation(
             top_qx_rows = sorted(qx_rows, key=lambda row: row[-1], reverse=True)[:200]
             write_sheet(top_qx_ws, ["age", "year", "generated", "benchmark", "abs_error"], top_qx_rows)
 
-            coef_first_year = float(e0_projection.loc[e0_projection["Year"] == START_YEAR, "coef_t"].iloc[0])
+            coef_first_year = float(result.e0_projection.loc[result.e0_projection["Year"] == START_YEAR, "coef_t"].iloc[0])
             qx_horizon_by_age = {
-                int(row.Age): float(row.qx_proj2073) * 1000.0
-                for row in result["qx_horizon"].itertuples(index=False)
+                age: value * 1000.0
+                for age, value in profile_by_age(result.qx_horizon, "qx_proj2073").items()
             }
             start_qx_by_age = {
-                int(row.Age): float(row.smoothed_start) * 1000.0
-                for row in result["start_qx"].itertuples(index=False)
+                age: value * 1000.0
+                for age, value in smoothed_start_by_age(result.start_qx).items()
             }
             start_diag_rows = []
             for age in range(0, 101):
@@ -942,7 +1002,7 @@ def build_validation(
                         start_qx_by_age[age],
                         implied_start,
                         qx_horizon_by_age[age],
-                        float(qx_df.loc[qx_df["Age"] == age, f"Year_{START_YEAR}"].iloc[0]) * 1000.0,
+                        float(result.qx_projected.loc[result.qx_projected["Age"] == age, year_column(START_YEAR)].iloc[0]) * 1000.0,
                         benchmark_first_year,
                         implied_start - start_qx_by_age[age],
                         implied_start - observed_qx[(config.sex, age, LAST_OBSERVED_YEAR)] * 1000.0,
@@ -987,31 +1047,13 @@ def build_validation(
             e0_life_summary.sex = config.sex
             e0_life_summary.metric = "e0_life_table_vs_official_age0"
             summary_lookup[(variant_name, config.sex, e0_life_summary.metric)] = e0_life_summary
-            summary_ws.append(
-                [
-                    variant_name,
-                    e0_life_summary.sex,
-                    e0_life_summary.metric,
-                    e0_life_summary.compared_cells,
-                    e0_life_summary.mean_abs_error,
-                    e0_life_summary.max_abs_error,
-                ]
-            )
+            append_summary(summary_ws, variant_name, e0_life_summary)
 
             _, e0_path_summary = compare_dicts(generated_e0_adjusted, benchmark_e0[config.sex])
             e0_path_summary.sex = config.sex
             e0_path_summary.metric = "e0_logit_path_vs_official_age0"
             summary_lookup[(variant_name, config.sex, e0_path_summary.metric)] = e0_path_summary
-            summary_ws.append(
-                [
-                    variant_name,
-                    e0_path_summary.sex,
-                    e0_path_summary.metric,
-                    e0_path_summary.compared_cells,
-                    e0_path_summary.mean_abs_error,
-                    e0_path_summary.max_abs_error,
-                ]
-            )
+            append_summary(summary_ws, variant_name, e0_path_summary)
 
             e0_target_summary = SummaryRow(
                 sex=config.sex,
@@ -1021,16 +1063,7 @@ def build_validation(
                 max_abs_error=abs(generated_e0_life[END_YEAR] - config.horizon_target_e0),
             )
             summary_lookup[(variant_name, config.sex, e0_target_summary.metric)] = e0_target_summary
-            summary_ws.append(
-                [
-                    variant_name,
-                    e0_target_summary.sex,
-                    e0_target_summary.metric,
-                    e0_target_summary.compared_cells,
-                    e0_target_summary.mean_abs_error,
-                    e0_target_summary.max_abs_error,
-                ]
-            )
+            append_summary(summary_ws, variant_name, e0_target_summary)
 
     if VARIANT_MALE_HIGH_AGE_ADJUSTED in results:
         comparison_ws = output_wb.create_sheet("male_variant_compare")
@@ -1086,7 +1119,7 @@ def build_validation(
     output_wb.save(VALIDATION_FILE)
 
 
-def save_outputs(results: dict[str, dict[str, dict[str, pd.DataFrame | dict]]]) -> None:
+def save_outputs(results: dict[str, dict[str, ReplicationResult]]) -> None:
     for variant_name, variant_results in results.items():
         suffix = "" if variant_name == VARIANT_BASELINE else f"_{variant_name}"
         for config in CONFIGS:
@@ -1096,19 +1129,19 @@ def save_outputs(results: dict[str, dict[str, dict[str, pd.DataFrame | dict]]]) 
                 continue
 
             result = variant_results[config.sex]
-            save_dataframe(result["parameters"], INTERMEDIATE_DIR / f"ine_parameters_{config.sex}_2024_2073{suffix}.xlsx")
-            save_dataframe(result["e0_projection"], INTERMEDIATE_DIR / f"ine_e0_projection_{config.sex}_2024_2073{suffix}.xlsx")
-            save_dataframe(result["observed_qx_wide"], INTERMEDIATE_DIR / f"ine_observed_qx_2015_2019_{config.sex}.xlsx")
-            save_dataframe(result["observed_ax_wide"], INTERMEDIATE_DIR / f"ine_observed_ax_2015_2019_{config.sex}.xlsx")
-            save_dataframe(result["smoothed_qx"], INTERMEDIATE_DIR / f"ine_qx_2019_twice_smoothed_{config.sex}.xlsx")
-            save_dataframe(result["smoothed_ax"], INTERMEDIATE_DIR / f"ine_ax_2019_twice_smoothed_{config.sex}.xlsx")
-            save_dataframe(result["start_qx"], INTERMEDIATE_DIR / f"ine_qx_start_profile_{config.sex}_2017_2019_2022_2023{suffix}.xlsx")
-            save_dataframe(result["start_ax"], INTERMEDIATE_DIR / f"ine_ax_start_profile_{config.sex}_2017_2019_2022_2023{suffix}.xlsx")
-            save_dataframe(result["qx_horizon"], INTERMEDIATE_DIR / f"ine_qx_projected_2073_{config.sex}{suffix}.xlsx")
-            save_dataframe(result["ax_horizon"], INTERMEDIATE_DIR / f"ine_ax_projected_2073_{config.sex}{suffix}.xlsx")
-            save_dataframe(result["qx_projected"], FINAL_DIR / f"ine_qx_2024_2073_{config.sex}{suffix}.xlsx")
-            save_dataframe(result["ax_projected"], FINAL_DIR / f"ine_ax_2024_2073_{config.sex}{suffix}.xlsx")
-            save_dataframe(result["life_projection"], FINAL_DIR / f"ine_e0_life_table_{config.sex}_2024_2073{suffix}.xlsx")
+            save_dataframe(result.parameters, INTERMEDIATE_DIR / f"ine_parameters_{config.sex}_2024_2073{suffix}.xlsx")
+            save_dataframe(result.e0_projection, INTERMEDIATE_DIR / f"ine_e0_projection_{config.sex}_2024_2073{suffix}.xlsx")
+            save_dataframe(result.observed_qx_wide, INTERMEDIATE_DIR / f"ine_observed_qx_2015_2019_{config.sex}.xlsx")
+            save_dataframe(result.observed_ax_wide, INTERMEDIATE_DIR / f"ine_observed_ax_2015_2019_{config.sex}.xlsx")
+            save_dataframe(result.smoothed_qx, INTERMEDIATE_DIR / f"ine_qx_2019_twice_smoothed_{config.sex}.xlsx")
+            save_dataframe(result.smoothed_ax, INTERMEDIATE_DIR / f"ine_ax_2019_twice_smoothed_{config.sex}.xlsx")
+            save_dataframe(result.start_qx, INTERMEDIATE_DIR / f"ine_qx_start_profile_{config.sex}_2017_2019_2022_2023{suffix}.xlsx")
+            save_dataframe(result.start_ax, INTERMEDIATE_DIR / f"ine_ax_start_profile_{config.sex}_2017_2019_2022_2023{suffix}.xlsx")
+            save_dataframe(result.qx_horizon, INTERMEDIATE_DIR / f"ine_qx_projected_2073_{config.sex}{suffix}.xlsx")
+            save_dataframe(result.ax_horizon, INTERMEDIATE_DIR / f"ine_ax_projected_2073_{config.sex}{suffix}.xlsx")
+            save_dataframe(result.qx_projected, FINAL_DIR / f"ine_qx_2024_2073_{config.sex}{suffix}.xlsx")
+            save_dataframe(result.ax_projected, FINAL_DIR / f"ine_ax_2024_2073_{config.sex}{suffix}.xlsx")
+            save_dataframe(result.life_projection, FINAL_DIR / f"ine_e0_life_table_{config.sex}_2024_2073{suffix}.xlsx")
 
 
 def main() -> None:
