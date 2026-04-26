@@ -1,0 +1,11 @@
+old/
+output/
+__pycache__/
+*.pyc
+*.tmp
+*.log
+.venv/
+.pytest_cache/
+~$*.xlsx
+input/demographic_inputs/fresh_downloads/ine_31912_full.csv
+input/demographic_inputs/fresh_downloads/ine_56934_full.csv
