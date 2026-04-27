@@ -21,6 +21,7 @@ The active replication script is:
 The next implementation stage will live under:
 
 - `code/extension_2100`
+- `code/extension_2100/extension_2100_walkthrough.ipynb`
 
 To rerun the active workflow:
 

@@ -16,6 +16,13 @@ Keep this stage separate from the INE replication:
 ## Expected future contents
 
 - one main extension script
+- one readable walkthrough notebook
 - a short note describing the UN assumptions used
 - outputs stored separately from the INE replication outputs
 - inputs drawn from `input/demographic_inputs/un_extension`
+
+## Current scaffold
+
+- `extension_2100_walkthrough.ipynb`
+
+This notebook is a planning scaffold for the future extension stage so the repo already has a readable entry point when that work begins.

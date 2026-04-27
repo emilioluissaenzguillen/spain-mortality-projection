@@ -33,6 +33,7 @@ python code/replication/ine_methodology_replication.py
 ## Stage 2: Extension to 2100
 
 - `extension_2100/README.md`
+- `extension_2100/extension_2100_walkthrough.ipynb`
 
 This folder is reserved for the next implementation step:
 extend the validated INE-style workflow to `2100` using UN-based assumptions for Spain.
