@@ -16,6 +16,7 @@ The active completed stage is the INE replication for the current release:
 The active replication script is:
 
 - `code/replication/ine_methodology_replication.py`
+- `code/replication/ine_methodology_replication_walkthrough.ipynb`
 
 The next implementation stage will live under:
 
@@ -44,9 +45,10 @@ python code/replication/ine_methodology_replication.py
 ## Recommended reading order
 
 1. `code/README.md`
-2. `code/replication/README.md`
-3. `reference/INE/mortality_projection_note.md`
-4. `code/replication/ine_methodology_replication.py`
+2. `code/replication/ine_methodology_replication_walkthrough.ipynb`
+3. `code/replication/README.md`
+4. `reference/INE/mortality_projection_note.md`
+5. `code/replication/ine_methodology_replication.py`
 
 ## Main outputs
 

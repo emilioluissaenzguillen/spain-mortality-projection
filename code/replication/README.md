@@ -5,6 +5,7 @@ This folder contains the active replication attempt for INE's published projecte
 ## Main script
 
 - `ine_methodology_replication.py`
+- `ine_methodology_replication_walkthrough.ipynb`
 
 Run it with:
 
@@ -20,6 +21,14 @@ python code/replication/ine_methodology_replication.py
 4. Produces two replication variants:
    - `baseline`
    - `male_high_age_adjusted`
+
+## Readable companion
+
+If you want a more approachable entry point, open:
+
+- `ine_methodology_replication_walkthrough.ipynb`
+
+The notebook follows the same workflow as the script, but in a more narrative order.
 
 ## Key input files
 

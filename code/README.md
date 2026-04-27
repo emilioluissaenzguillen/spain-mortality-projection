@@ -8,6 +8,8 @@ This is the active implemented stage.
 
 - `replication/ine_methodology_replication.py`
   Main script for the `2024-2073` INE replication.
+- `replication/ine_methodology_replication_walkthrough.ipynb`
+  Readable notebook companion that walks through the same workflow step by step.
 - `replication/README.md`
   Short guide to the active script, inputs, and outputs.
 - `preprocessing/build_ine_observed_qx_2015_2019.py`
