@@ -25,6 +25,7 @@ Keep this stage separate from the INE replication:
 
 - `un_extension_2100.py`
 - `extension_2100_walkthrough.ipynb`
+- `un_annualization_note.md`
 
 ## Current approach
 
@@ -40,3 +41,10 @@ The first implementation keeps the current INE-style replication unchanged throu
 - `output/mortality_projection/final/extension_2100/un_extension_validation_2074_2100.xlsx`
 
 This workbook shows the annualized UN target path and the resulting life-table `e0` from the extension.
+
+## Important note
+
+The conversion from UN quinquennial values to annual targets is a modelling choice.
+See:
+
+- `un_annualization_note.md`
