@@ -17,6 +17,7 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 
 
+# Configuration
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OBSERVED_FILE = (
     PROJECT_ROOT
@@ -54,6 +55,7 @@ VARIANT_SHEET_PREFIX = {
 }
 
 
+# Small data containers
 @dataclass(frozen=True)
 class SexConfig:
     sex: str
@@ -107,6 +109,7 @@ class ReplicationResult:
     life_projection: pd.DataFrame
 
 
+# Basic filesystem helpers
 def require_file(path: Path) -> None:
     if not path.exists():
         raise FileNotFoundError(f"Missing required file: {path}")
@@ -126,6 +129,7 @@ def parse_age_label(text: str) -> int | None:
     return int(match.group())
 
 
+# INE input parsing
 def parse_observed_ine_table() -> tuple[
     dict[tuple[str, int, int], float],
     dict[tuple[str, int, int], float],
@@ -273,6 +277,7 @@ def load_deaths_male_2023() -> dict[int, float]:
     return values
 
 
+# Optional male high-age proxy
 def estimated_qx_2023_male(
     population: dict[int, float],
     deaths: dict[int, float],
@@ -307,6 +312,7 @@ def smoothed_estimated_high_ages(
     return result
 
 
+# Life-expectancy path and horizon profile
 def fit_alpha_beta(years: np.ndarray, e0_values: np.ndarray, e0_min: float, e0_max: float) -> tuple[float, float]:
     logit_values = np.log((e0_max - e0_values) / (e0_values - e0_min))
     design = np.column_stack([np.ones_like(years, dtype=float), years.astype(float)])
@@ -543,6 +549,7 @@ def interpolate_profiles(
     }
 
 
+# Year-by-year profile projection
 def build_yearly_profiles(
     smoothed_2019: dict[int, float],
     horizon_profile: dict[int, float],
@@ -576,6 +583,8 @@ def build_yearly_profiles(
     for year in range(START_YEAR, END_YEAR + 1):
         df[f"Year_{year}"] = [projected[year][age] for age in ages]
     return df
+
+
 def life_expectancy_at_birth(qx_by_age: dict[int, float], ax_by_age: dict[int, float]) -> float:
     # INE closes the life table at age 100+ with q100+ = 1.
     lx = 100000.0
@@ -589,6 +598,7 @@ def life_expectancy_at_birth(qx_by_age: dict[int, float], ax_by_age: dict[int, f
     return total_Lx / 100000.0
 
 
+# Published benchmark parsing
 def parse_benchmark_qx() -> dict[str, dict[tuple[int, int], float]]:
     wb = load_workbook(BENCHMARK_FILE, read_only=True, data_only=True)
     ws = wb["tabla-36774"]
@@ -660,6 +670,7 @@ def parse_benchmark_e0() -> dict[str, dict[int, float]]:
     return benchmark
 
 
+# Validation and output helpers
 def compare_dicts(lhs: dict, rhs: dict) -> tuple[list[tuple], SummaryRow]:
     common_keys = sorted(set(lhs).intersection(rhs))
     rows: list[tuple] = []
@@ -788,6 +799,7 @@ def append_summary(summary_ws, variant_name: str, summary: SummaryRow) -> None:
     )
 
 
+# Core replication workflow
 def run_for_sex(
     config: SexConfig,
     observed_qx: dict[tuple[str, int, int], float],
@@ -937,6 +949,7 @@ def build_all_results(
     return results
 
 
+# Validation workbook
 def build_validation(
     results: dict[str, dict[str, ReplicationResult]],
     benchmark_qx: dict[str, dict[tuple[int, int], float]],
@@ -1119,6 +1132,7 @@ def build_validation(
     output_wb.save(VALIDATION_FILE)
 
 
+# File outputs and entry point
 def save_outputs(results: dict[str, dict[str, ReplicationResult]]) -> None:
     for variant_name, variant_results in results.items():
         suffix = "" if variant_name == VARIANT_BASELINE else f"_{variant_name}"
@@ -1145,6 +1159,8 @@ def save_outputs(results: dict[str, dict[str, ReplicationResult]]) -> None:
 
 
 def main() -> None:
+    # The script keeps the full workflow in one place:
+    # read sources, run the replication, save outputs, and build validation.
     require_file(OBSERVED_FILE)
     require_file(MODEL_TABLE_FILE)
     require_file(BENCHMARK_FILE)
