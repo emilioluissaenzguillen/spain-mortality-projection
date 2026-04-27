@@ -18,10 +18,11 @@ The active replication script is:
 - `code/replication/ine_methodology_replication.py`
 - `code/replication/ine_methodology_replication_walkthrough.ipynb`
 
-The next implementation stage will live under:
+The extension stage currently lives under:
 
 - `code/extension_2100`
 - `code/extension_2100/extension_2100_walkthrough.ipynb`
+- `code/extension_2100/un_extension_2100.py`
 
 To rerun the active workflow:
 

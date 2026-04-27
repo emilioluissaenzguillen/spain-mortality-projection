@@ -21,8 +21,22 @@ Keep this stage separate from the INE replication:
 - outputs stored separately from the INE replication outputs
 - inputs drawn from `input/demographic_inputs/un_extension`
 
-## Current scaffold
+## Current files
 
+- `un_extension_2100.py`
 - `extension_2100_walkthrough.ipynb`
 
-This notebook is a planning scaffold for the future extension stage so the repo already has a readable entry point when that work begins.
+## Current approach
+
+The first implementation keeps the current INE-style replication unchanged through `2073` and then:
+
+- reads the UN Spain life-expectancy path for men and women
+- treats the quinquennial UN values as knots at `2075, 2080, ..., 2100`
+- annualizes the target path by linear interpolation between those knots
+- extends `qx` and `ax` from the replicated `2073` endpoint to a `2100` horizon profile using the same interpolation mechanics as the replication workflow
+
+## Main outputs
+
+- `output/mortality_projection/final/extension_2100/un_extension_validation_2074_2100.xlsx`
+
+This workbook shows the annualized UN target path and the resulting life-table `e0` from the extension.
