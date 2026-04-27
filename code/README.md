@@ -12,10 +12,10 @@ This is the active implemented stage.
   Readable notebook companion that walks through the same workflow step by step.
 - `replication/README.md`
   Short guide to the active script, inputs, and outputs.
-- `preprocessing/build_ine_observed_qx_2015_2019.py`
-  Helper extractor for observed INE mortality-table inputs.
 - `preprocessing/build_ine_2023_start_profile_inputs.py`
   Helper extractor that reduces the raw `31912` and `56934` downloads to the compact inputs used by the active replication.
+
+The `preprocessing/` folder is intentionally small and only contains helper scripts that prepare raw source files for the active workflow.
 
 The main script now produces:
 
