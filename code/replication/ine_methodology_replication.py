@@ -115,6 +115,18 @@ def require_file(path: Path) -> None:
         raise FileNotFoundError(f"Missing required file: {path}")
 
 
+def validate_required_files() -> None:
+    for path in [
+        OBSERVED_FILE,
+        MODEL_TABLE_FILE,
+        BENCHMARK_FILE,
+        BENCHMARK_E0_FILE,
+        POPULATION_EXTRACT_CSV,
+        DEATHS_EXTRACT_CSV,
+    ]:
+        require_file(path)
+
+
 def ensure_dirs() -> None:
     INTERMEDIATE_DIR.mkdir(parents=True, exist_ok=True)
     FINAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -671,6 +683,19 @@ def parse_benchmark_e0() -> dict[str, dict[int, float]]:
 
 
 # Validation and output helpers
+def load_all_inputs() -> tuple[
+    dict[tuple[str, int, int], float],
+    dict[tuple[str, int, int], float],
+    dict[tuple[str, int], float],
+    dict[str, dict[tuple[int, int], float]],
+    dict[str, dict[int, float]],
+]:
+    observed_qx, observed_ax, observed_e0 = parse_observed_ine_table()
+    benchmark_qx = parse_benchmark_qx()
+    benchmark_e0 = parse_benchmark_e0()
+    return observed_qx, observed_ax, observed_e0, benchmark_qx, benchmark_e0
+
+
 def compare_dicts(lhs: dict, rhs: dict) -> tuple[list[tuple], SummaryRow]:
     common_keys = sorted(set(lhs).intersection(rhs))
     rows: list[tuple] = []
@@ -741,7 +766,7 @@ def profile_by_age(df: pd.DataFrame, value_name: str) -> dict[int, float]:
     }
 
 
-def build_life_projection(qx_projected: pd.DataFrame, ax_projected: pd.DataFrame) -> pd.DataFrame:
+def build_life_table_projection(qx_projected: pd.DataFrame, ax_projected: pd.DataFrame) -> pd.DataFrame:
     life_rows: list[dict[str, float | int]] = []
     for year in range(START_YEAR, END_YEAR + 1):
         qx_by_age = {
@@ -800,7 +825,7 @@ def append_summary(summary_ws, variant_name: str, summary: SummaryRow) -> None:
 
 
 # Core replication workflow
-def run_for_sex(
+def replicate_one_sex(
     config: SexConfig,
     observed_qx: dict[tuple[str, int, int], float],
     observed_ax: dict[tuple[str, int, int], float],
@@ -854,7 +879,7 @@ def run_for_sex(
         coef_series,
         force_terminal_qx=False,
     )
-    life_projection = build_life_projection(qx_projected, ax_projected)
+    life_projection = build_life_table_projection(qx_projected, ax_projected)
 
     return ReplicationResult(
         parameters=parameters,
@@ -907,17 +932,17 @@ def rebuild_result_with_start_profiles(
         ax_horizon=result.ax_horizon,
         qx_projected=qx_projected,
         ax_projected=ax_projected,
-        life_projection=build_life_projection(qx_projected, ax_projected),
+        life_projection=build_life_table_projection(qx_projected, ax_projected),
     )
 
 
-def build_all_results(
+def run_replication_pipeline(
     observed_qx: dict[tuple[str, int, int], float],
     observed_ax: dict[tuple[str, int, int], float],
     observed_e0: dict[tuple[str, int], float],
 ) -> dict[str, dict[str, ReplicationResult]]:
     baseline_results = {
-        config.sex: run_for_sex(config, observed_qx, observed_ax, observed_e0)
+        config.sex: replicate_one_sex(config, observed_qx, observed_ax, observed_e0)
         for config in CONFIGS
     }
     results: dict[str, dict[str, ReplicationResult]] = {VARIANT_BASELINE: baseline_results}
@@ -950,7 +975,7 @@ def build_all_results(
 
 
 # Validation workbook
-def build_validation(
+def write_validation_workbook(
     results: dict[str, dict[str, ReplicationResult]],
     benchmark_qx: dict[str, dict[tuple[int, int], float]],
     benchmark_e0: dict[str, dict[int, float]],
@@ -1133,7 +1158,7 @@ def build_validation(
 
 
 # File outputs and entry point
-def save_outputs(results: dict[str, dict[str, ReplicationResult]]) -> None:
+def write_projection_outputs(results: dict[str, dict[str, ReplicationResult]]) -> None:
     for variant_name, variant_results in results.items():
         suffix = "" if variant_name == VARIANT_BASELINE else f"_{variant_name}"
         for config in CONFIGS:
@@ -1158,23 +1183,19 @@ def save_outputs(results: dict[str, dict[str, ReplicationResult]]) -> None:
             save_dataframe(result.life_projection, FINAL_DIR / f"ine_e0_life_table_{config.sex}_2024_2073{suffix}.xlsx")
 
 
-def main() -> None:
-    # The script keeps the full workflow in one place:
-    # read sources, run the replication, save outputs, and build validation.
-    require_file(OBSERVED_FILE)
-    require_file(MODEL_TABLE_FILE)
-    require_file(BENCHMARK_FILE)
-    require_file(BENCHMARK_E0_FILE)
-    require_file(POPULATION_EXTRACT_CSV)
-    require_file(DEATHS_EXTRACT_CSV)
-    ensure_dirs()
+def run_full_workflow() -> None:
+    observed_qx, observed_ax, observed_e0, benchmark_qx, benchmark_e0 = load_all_inputs()
+    results = run_replication_pipeline(observed_qx, observed_ax, observed_e0)
+    write_projection_outputs(results)
+    write_validation_workbook(results, benchmark_qx, benchmark_e0, observed_qx)
 
-    observed_qx, observed_ax, observed_e0 = parse_observed_ine_table()
-    benchmark_qx = parse_benchmark_qx()
-    benchmark_e0 = parse_benchmark_e0()
-    results = build_all_results(observed_qx, observed_ax, observed_e0)
-    save_outputs(results)
-    build_validation(results, benchmark_qx, benchmark_e0, observed_qx)
+
+def main() -> None:
+    # The file is intentionally self-contained, but the execution path is
+    # still simple: validate inputs, run the pipeline, then write outputs.
+    validate_required_files()
+    ensure_dirs()
+    run_full_workflow()
     print(f"Wrote outputs to: {FINAL_DIR}")
     print(f"Wrote validation workbook: {VALIDATION_FILE}")
 
