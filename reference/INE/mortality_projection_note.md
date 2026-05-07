@@ -18,6 +18,20 @@ The official INE methodology for the `2024-2073` release keeps the same overall 
 6. The projected `qx` for `2073` is still obtained by interpolation between Coale-Demeny model life tables, East for men and West for women.
 7. The methodology note says the projected age profiles avoid carrying forward the pandemic shock and refers again to the twice-smoothed `2019` `qx` and `ax` profiles as the age-pattern starting point.
 
+## New clarification on the 2023 starting point
+
+After the current replication was compared against the published `2024-2073` tables, INE confirmed by email that the remaining small discrepancies are expected to come from the provisional inputs used to build the estimated mortality table for `2023`.
+
+According to that clarification:
+
+1. The estimated `2023` mortality table used as the starting point of the projection was built from an internal provisional deaths file for `2023` from the operation `Estimación del número de defunciones semanales`.
+2. Those deaths are not exactly the same as the values currently published for that operation.
+3. The populations at `1 July 2023` used to calculate the `2023` mortality rates were also provisional at the time and came from `Estadística Continua de Población`.
+4. Those provisional populations are not the same as the values currently available to the public.
+5. INE explicitly stated that no additional treatment was applied beyond what is described on page `22` of the methodological document for the `2024-2074` population projections.
+
+This is the key explanation for the residual mismatch that remains when using only currently published public inputs.
+
 ## What the emails clarify
 
 1. Interpolation is by year, not by cohort.
@@ -81,6 +95,10 @@ This coefficient implies interpolation between the model-table levels correspond
 ## Why your results can differ slightly
 
 One INE reply explains that small decimal differences can appear because the original official exercise used provisional 2019 results at the time, while later replications may use final 2019 values.
+
+For the current `2024-2073` replication, INE has now clarified the same kind of issue for the `2023` starting point: the official projection used provisional internal deaths and provisional population inputs that are not exactly reproducible from the currently published public tables.
+
+So the remaining discrepancy in the active replication should be interpreted as an input-data gap, not as evidence of an undocumented extra adjustment in the projection method.
 
 ## Files behind this note
 

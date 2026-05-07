@@ -22,6 +22,17 @@ python code/replication/ine_methodology_replication.py
    - `baseline`
    - `male_high_age_adjusted`
 
+## Interpretation of the current fit
+
+The current replication follows the published methodology closely and matches the official tables reasonably well, especially for women and for the later years of the horizon.
+
+INE later confirmed by email that the remaining residual differences are expected because the official starting table for `2023` was built from provisional internal deaths and provisional population inputs that are not exactly the same as the values currently published.
+
+So:
+
+- the `baseline` result should be read as the methodology-faithful public-data replication
+- the optional `male_high_age_adjusted` result should be read only as an empirical proxy for the remaining male high-age starting-point gap
+
 ## Readable companion
 
 If you want a more approachable entry point, open:
@@ -58,3 +69,5 @@ This workbook is the main place to review:
 - benchmark comparisons by sex and year
 - life-expectancy validation
 - the side-by-side comparison between the baseline and the optional male high-age adjustment
+
+The main remaining mismatch is concentrated in the first projected male years at very high ages, which is consistent with the later INE clarification on the provisional `2023` starting inputs.

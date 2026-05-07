@@ -62,6 +62,8 @@ This workbook contains:
 - the optional `male_high_age_adjusted` variant
 - direct comparisons against INE `36774` and `36775`
 
+INE later confirmed by email that the remaining small discrepancies in the `2024-2073` replication are expected to come from the provisional internal deaths file and provisional `1 July 2023` population inputs used to build the official starting table for `2023`. So the residual gap should be interpreted as an input-data limitation of the public replication, not as evidence of a missing unpublished adjustment in the method.
+
 ## Repo notes
 
 - Input filenames keep their original downloaded names where possible.
